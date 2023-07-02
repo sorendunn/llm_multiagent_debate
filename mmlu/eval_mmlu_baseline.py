@@ -111,7 +111,7 @@ def most_frequent(List):
     return num
 
 if __name__ == "__main__":
-    response_dict = json.load(open("mmlu_personalities_3_2.json", "r"))
+    response_dict = json.load(open("mmlu_4_1_baseline.json", "r"))
     questions = list(response_dict.keys())
 
     accuracies = []
@@ -121,6 +121,7 @@ if __name__ == "__main__":
 
         pred_solutions = []
         for response in responses:
+
             pred_solution = response[-1]['content']
 
             pred_solutions.append(pred_solution)
@@ -128,7 +129,7 @@ if __name__ == "__main__":
 
         # pred_solutions = pred_solutions[:1]
 
-        accurate = compute_accuracy(gt, pred_solutions)
+        accurate = compute_accuracy(gt, [pred_solutions[-1]])
 
 
         if accurate is not None:

@@ -4,15 +4,18 @@ import json
 import time
 import random
 import openai
+import os
 
-def construct_message(agents, question, idx):
+openai.api_key = os.environ.get('OPENAI_API_KEY')
+
+def construct_message(agents, question):
     if len(agents) == 0:
         return {"role": "user", "content": "Can you double check that your answer is correct. Put your final answer in the form (X) at the end of your response."}
 
     prefix_string = "These are the solutions to the problem from other agents: "
 
     for agent in agents:
-        agent_response = agent[idx]["content"]
+        agent_response = agent[-1]["content"]
         response = "\n\n One agent solution: ```{}```".format(agent_response)
 
         prefix_string = prefix_string + response
@@ -29,15 +32,17 @@ def construct_assistant_message(completion):
 def generate_answer(answer_context):
     try:
         completion = openai.ChatCompletion.create(
-                  model="gpt-3.5-turbo-0301",
+                  model="gpt-3.5-turbo",
                   messages=answer_context,
                   n=1)
-    except:
+    except Exception as e:  # Store the exception in variable e
+        print(f"An error occurred: {e}")
         print("retrying due to an error......")
         time.sleep(20)
         return generate_answer(answer_context)
 
     return completion
+
 
 
 def parse_question_answer(df, ix):
@@ -54,10 +59,10 @@ def parse_question_answer(df, ix):
     return question, answer
 
 if __name__ == "__main__":
-    agents = 3
-    rounds = 2
+    agents = 4
+    rounds = 1
 
-    tasks = glob("/data/vision/billf/scratch/yilundu/llm_iterative_debate/mmlu/data/test/*.csv")
+    tasks = glob("C:/Users/soren/Desktop/data/data/test/*.csv")
 
     dfs = [pd.read_csv(task) for task in tasks]
 
@@ -78,14 +83,13 @@ if __name__ == "__main__":
 
                 if round != 0:
                     agent_contexts_other = agent_contexts[:i] + agent_contexts[i+1:]
-                    message = construct_message(agent_contexts_other, question, 2 * round - 1)
+                    message = construct_message(agent_contexts_other, question)
                     agent_context.append(message)
 
                 completion = generate_answer(agent_context)
 
                 assistant_message = construct_assistant_message(completion)
                 agent_context.append(assistant_message)
-                print(completion)
 
         response_dict[question] = (agent_contexts, answer)
 
