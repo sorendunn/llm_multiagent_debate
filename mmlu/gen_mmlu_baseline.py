@@ -7,27 +7,11 @@ import openai
 import os
 
 openai.api_key = os.environ.get('OPENAI_API_KEY')
+arbiter_format_prompt = "\n\nExplain each of the students' reasoning step by step. Put your answer in the form (X) at the end of your response."
 
-def construct_message(agents, question):
-    if len(agents) == 0:
-        return {"role": "user", "content": "Can you double check that your answer is correct. Put your final answer in the form (X) at the end of your response."}
-
-    prefix_string = "These are the solutions to the problem from other agents: "
-
-    for agent in agents:
-        agent_response = agent[-1]["content"]
-        response = "\n\n One agent solution: ```{}```".format(agent_response)
-
-        prefix_string = prefix_string + response
-
-    prefix_string = prefix_string + """\n\n Using the reasoning from other agents as additional advice, can you give an updated answer? Examine your solution and that other agents step by step. Put your answer in the form (X) at the end of your response.""".format(question)
-    return {"role": "user", "content": prefix_string}
-
-
-def construct_assistant_message(completion):
+def extract_text(completion):
     content = completion["choices"][0]["message"]["content"]
-    return {"role": "assistant", "content": content}
-
+    return content
 
 def generate_answer(answer_context):
     try:
@@ -35,15 +19,13 @@ def generate_answer(answer_context):
                   model="gpt-3.5-turbo",
                   messages=answer_context,
                   n=1)
-    except Exception as e:  # Store the exception in variable e
+    except Exception as e:
         print(f"An error occurred: {e}")
         print("retrying due to an error......")
         time.sleep(20)
         return generate_answer(answer_context)
 
     return completion
-
-
 
 def parse_question_answer(df, ix):
     question = df.iloc[ix, 0]
@@ -58,9 +40,13 @@ def parse_question_answer(df, ix):
 
     return question, answer
 
+def construct_assistant_message(completion):
+    content = completion["choices"][0]["message"]["content"]
+    return {"role": "assistant", "content": content}
+
 if __name__ == "__main__":
     agents = 4
-    rounds = 1
+    hint_ans = ["A", "B", "C", "D"]
 
     tasks = glob("C:/Users/soren/Desktop/data/data/test/*.csv")
 
@@ -76,21 +62,27 @@ if __name__ == "__main__":
 
         question, answer = parse_question_answer(df, idx)
 
-        agent_contexts = [[{"role": "user", "content": question}] for agent in range(agents)]
+        responses = []
 
-        for round in range(rounds):
-            for i, agent_context in enumerate(agent_contexts):
+        for i in range(agents):
+            # Each advocate is prodded towards advocating for a particular answer choice
+            agent_context_with_hint = [{"role": "user", "content": question + advocate_prompt + hint_ans[i] + ")"}]
+            completion = generate_answer(agent_context_with_hint)
+            completion_text = construct_assistant_message(completion)
+            responses.append(completion_text)
 
-                if round != 0:
-                    agent_contexts_other = agent_contexts[:i] + agent_contexts[i+1:]
-                    message = construct_message(agent_contexts_other, question)
-                    agent_context.append(message)
 
-                completion = generate_answer(agent_context)
+        # Now the arbiter judges the four previous responses and comes to their own conclusion
+        advocate_responses_formatted = "\nStudent 1:\n {},\n Student 2:\n {},\n Student 3:\n Student 4:\n {}".format(responses[0], responses[1], responses[2], responses[3])
 
-                assistant_message = construct_assistant_message(completion)
-                agent_context.append(assistant_message)
+        arbiter_context = [{"role": "user", "content": question + arbiter_prompt + advocate_responses_formatted + arbiter_format_prompt}]
 
-        response_dict[question] = (agent_contexts, answer)
+        completion = generate_answer(arbiter_context)
 
-    json.dump(response_dict, open("mmlu_{}_{}.json".format(agents, rounds), "w"))
+        arbiter_response = construct_assistant_message(completion)
+
+        responses.append(arbiter_response)
+
+        response_dict[question] = (responses, answer)
+
+    json.dump(response_dict, open("mmlu_{}.json".format(agents), "w"))
